@@ -172,14 +172,14 @@ class Minefield:
             # to ensure that the spot is safe
             if debug: print("first reveal...")
             self.firstReveal(pos)
+            return True
         else:
             if self.win or self.lose:
-                return
+                return False
             x, y = pos
             cell = self.cell[x][y]
-            if debug: print("cell info: (revealed: %s, flag: %s, mine: %s)"%(cell.revealed, cell.flag, cell.question))
-            if not self.cell[x][y].revealed and not self.cell[x][y].flag and not self.cell[x][y].question:
-                self.cell[x][y].revealed = True
+            if not cell.revealed and not cell.flag and not cell.question:
+                cell.revealed = True
                 if self.cell[x][y].mine:
                     self.lose = True
                 else:
@@ -187,7 +187,10 @@ class Minefield:
                     if debug: print("%d mines surround."%s)
                     if s == 0:
                         self.revealAround(pos)
-                self.checkWin()
+                    self.checkWin()
+                    return True
+            return False
+                        
                     
     def revealAround(self,pos):
         debug = False
@@ -200,20 +203,22 @@ class Minefield:
 
     def flag(self,pos):
         if self.win or self.lose:
-            return
+            return False
         x, y = pos
         cell = self.cell[x][y]
-        if not cell.revealed:
-            if cell.flag:
-                cell.flag = False
-                if self.useQuestion:
-                    cell.question = True
-                self.flagged -= 1
-            elif self.useQuestion and cell.question:
-                cell.question = False
-            else:
-                cell.flag = True
-                self.flagged += 1
+        if cell.revealed:
+            return False
+        if cell.flag:
+            cell.flag = False
+            if self.useQuestion:
+                cell.question = True
+            self.flagged -= 1
+        elif self.useQuestion and cell.question:
+            cell.question = False
+        else:
+            cell.flag = True
+            self.flagged += 1
+        return True
 
     def adjacentPositions(self, pos):
         positions = []

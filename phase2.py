@@ -144,148 +144,99 @@ def max_pool(x,k,S):
     return tf.nn.max_pool(x,[1,k,k,1],[1,S,S,1],padding="SAME")
 
 
-def build_q_learn_model(args, grid_size):
+def build_q_learn_model(game):
     """
     modified from q learning tensorflow example at:
     https://medium.com/emergent-future/simple-reinforcement-learning-with-tensorflow-part-0-q-learning-with-tables-and-neural-networks-d195264329d0
     """
     # feed-forward part of the network used to choose actions
+    grid_size = game.getSize()
     gw,gh = grid_size
     cell_count = gw*gh
-    inputs = tf.placeholder(shape=[1,cell_count],dtype=tf.float32)
-    W = tf.Variable(tf.random_uniform([cell_count,4],0,0.01))
-    Qout = tf.matmul(inputs1,W)
-    predict = tf.argmax(Qout,1)
+    action_count = cell_count * 2
+    inputs = tf.placeholder(shape=[gw,gh],dtype=tf.float32,name="x_in")
+    flat_in = tf.reshape(inputs, (-1,cell_count))
+    W = tf.Variable(tf.random_uniform([cell_count,action_count],0,0.01), name="W1")
+    Qout = tf.matmul(flat_in,W,name="q_out")
+    predict = tf.argmax(Qout,1,name="action")
 
     # obtain the loss by taking the sum of squares difference
     # between the target and prediction Q values.
-    nextQ = tf.placeholder(shape=[1,4],dtype=tf.float32)
+    nextQ = tf.placeholder(shape=[1,action_count],dtype=tf.float32, name="next_q")
     loss = tf.reduce_sum(tf.square(nextQ - Qout))
     trainer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
-    updateModel = trainer.minimize(loss)
-
-def build_model_1(args, grid_size, C):
-    """
-    Adds a CNN to the graph.
-
-    :param args: (string) the parsed argument object
-
-    """
-    gw,gh = grid_size
-    cell_count = gw*gh
-    # placeholders
-    
-    x = tf.placeholder(dtype=tf.float32,shape=(None,gw,gh,1),name="x")
-    y_true = tf.placeholder(dtype=tf.int64,shape=(None,gw,gh,C),name="y_true")
-    a0 = x # for notational simplicity/consistency
-
-    filters = 24
-    
-    # build CNN, putting each layer in its own scope
-    with tf.variable_scope("layer1_conv"):
-        a1 = conv2d(a0,k=5,L=1,Lprime=filters,S=1,P="SAME",f="relu")
-        # a1 is MB x 9 x 9 x 32
-        # need to transform MB * in_size
-    
-    with tf.variable_scope("layer2_conv"):
-        a2 = conv2d(a1,k=5,L=filters,Lprime=C,S=1,P="SAME",f="relu")
-        # a1 is MB x 9 x 9 x 32
-    """with tf.variable_scope("layer3_conv"):
-        a3 = conv2d(a2,k=3,L=C,Lprime=1,S=1,P="SAME",f="relu")
-        # a1 is MB x 9 x 9 x 32"""
-
-    conv_out = a2
-        
-    # flatten the tensor
-    in_size = cell_count*C
-    #in_size = cell_count
-    residual = tf.add(a0, conv_out)
-    
-    hidden_in = tf.reshape(conv_out,(-1, in_size))
-    hidden_dims = [cell_count,cell_count]
-    hidden_layer_count = len(hidden_dims)
-    # weight matrices and bias vectors for DNN component
-
-    # add skip connection from a0 to the DNN by adding a0 elemwise to hidden_in
-    
-    
-    W = []
-    B = []
-    from_dim = in_size
-    for i in range(hidden_layer_count):
-        units = hidden_dims[i]
-        # matrix transforms from from_dims to hidden_dim
-        temp_w = tf.get_variable(name="w%d"%i, shape = (from_dim,units), dtype = tf.float32,
-                                     initializer=tf.glorot_uniform_initializer())
-        b = None
-        if args.f == 'relu':
-            b = tf.get_variable(name="b%i"%i, dtype = tf.float32,
-                            initializer=tf.constant([0.1]*units))
-        else:
-            b = tf.get_variable(name="b%i"%i, shape = (units), dtype = tf.float32,
-                                initializer=tf.zeros_initializer())
-        B.append(b)
-        W.append(temp_w)
-        from_dim = units
-        # add final matrix from last hidden layer to output
-    W.append(tf.get_variable(name="wf", shape=(from_dim, cell_count*C), dtype = tf.float32,
-                             initializer=tf.glorot_uniform_initializer()))
-    # and the final bias vector
-    B.append(tf.get_variable(name="bf", shape=(cell_count*C), dtype = tf.float32,
-                             initializer=tf.zeros_initializer()))
-
-
-    # f will be used as the activation for all hidden layers
-    if args.f == 'tanh':
-        f = tf.tanh
-    elif args.f == 'sigmoid':
-        f = tf.sigmoid
-    elif args.f == 'relu':
-        f = tf.nn.relu
-    else:
-        print("bad activation function")
-        return
-
-    # forward propogation through all hidden layers
-    in_layer = hidden_in
-    for i in range(hidden_layer_count):
-        mat = W[i]
-        b = B[i]
-        z = tf.matmul(in_layer, mat) + b
-        a = f(z)
-        in_layer = a
-
-    # for the output, do not use f as activation
-    mat = W[hidden_layer_count]
-    z = tf.matmul(in_layer, mat) + B[hidden_layer_count]
-    
-    # producing logits
-
-
-    # define loss
-    #cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=a3,labels=y_true)
-    #obj = tf.reduce_mean(cross_entropy,name="obj")
-    lbl = tf.reshape(y_true, (-1, cell_count, C))
-    pred = tf.reshape(z, (-1, cell_count, C), name="logits")
-    entropy = tf.nn.softmax_cross_entropy_with_logits(
-        labels=lbl,
-        logits=pred)
-    obj = tf.reduce_mean(entropy)
-    obj_id = tf.identity(obj, name="obj")
-    # optimizer
-    train_step = tf.train.AdamOptimizer(args.lr).minimize(obj,name="train_step")
-
-    # define accuracy
-    
-    acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(lbl,axis=2),tf.argmax(pred,axis=2)),tf.float32),name="acc")
-    
-    #acc = tf.reduce_mean(tf.cast(tf.square_difference(cast_y_true,a3),tf.float32),name="acc")
-
-    # define init op last
-    init = tf.global_variables_initializer()
-
+    updateModel = trainer.minimize(loss, name="update")
+    init = tf.initialize_all_variables()
     return init
 
+def perform_action(game, action_idx):
+    gw, gh = game.getSize()
+    # actions are just flagging and revealing any given cell
+    action_ct = (gw*gh*2)
+    flag = action_idx >= gw*gh
+    idx = action_idx % (gw*gh)
+    gx = idx // gh
+    gy = int(idx % gh)
+    cell = game.cell[gx][gy]
+    was_revealed = cell.revealed
+    was_flagged = cell.flag
+    # perform the action. method will return whether it was valid move
+    action = game.flag if flag else game.reveal
+    valid = action((gx,gy))
+    if not valid:
+        return 0
+    if flag:
+        if cell.mine:
+            return -1 if was_flagged else 1
+        else:
+            return 1 if was_flagged else -1
+    else:
+        return -5 if cell.mine else 1
+    
+def train_q_learn_model(init, game):
+    y = .99
+    e = 0.1
+    num_episodes = 2000
+    step_list = []
+    reward_list = []
+    with tf.Session() as sess:
+        sess.run(init)
+        for i in range(num_episodes):
+            # reset environment and get first new observation
+            game.reset()
+            state = get_game_state(game)
+            total_reward = 0
+            done = False
+            steps = 0
+            while steps < 99 and not done:
+                steps += 1
+                act, Q = sess.run(fetches=["action:0", "q_out:0"],
+                                  feed_dict={"x_in:0":state})
+                act = act[0]
+                if np.random.rand(1) < e:
+                    # get random action from the space of actions we can take
+                    pass
+                print("action: "+str(act))
+                reward = perform_action(game,act)
+                # do the action                    
+                next_state = get_game_state(game)
+                
+                Q_prime = sess.run(fetches=["q_out:0"], feed_dict={"x_in:0":next_state})
+                max_prime = np.max(Q_prime)
+                targ_q = Q
+                targ_q[0,act] = reward + y * max_prime
+                # train using predicted and target q
+                _,W1 = sess.run(fetches=["update","W1"], feed_dict={"x_in:0":state,"next_q:0":targ_q})
+                total_reward += reward
+                state = next_state
+                done = game.win or game.lose
+                if done:
+                    # reduce chance of random action as we train model
+                    e = 1./((i/50) + 10)
+                    break
+            step_list.append(steps)
+            reward_list.append(total_reward)
+                         
 
 def parse_all_args():
     """
@@ -437,8 +388,31 @@ def run_simulation(sess, game, random_start, ms_per_move):
             pygame.time.delay(ms_per_move)
     
     print("total move made: %s"%moves_made)
+
+def q_learn_main():
+
+    game = mines.Minefield(mines.DifficultyFactory.EASY)
+    gw,gh = game.getSize()
+
+    test_size = 8800
+    games_per_epoch = 100
+
+    N,D = test_size, gw*gh
+    """
+    dev   = np.genfromtxt(args.dev,delimiter=",")
+    dev_x = dev[:,1:]
+    dev_y = dev[:,0]
+    dev_x /= 255.0 # map from [0,255] to [0,1]"""
+
+    # reshape dev once (train will be reshaped each MB)
+    # (our graph assumes tensor-shaped input: N x W x W x L)
+    C = 2
+
+    pygame.init()
+    init = build_q_learn_model(game)
+    train_q_learn_model(init, game)
     
-def main():
+def convolution_main():
     """
     Parse arguments, build CNN, run training loop, report dev each epoch.
 
@@ -530,5 +504,5 @@ def main():
     pygame.time.delay(1)
 
 if __name__ == "__main__":
-    main()
+    q_learn_main()
     pass
