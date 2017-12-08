@@ -1,0 +1,29 @@
+[L.1] Nick Mounier
+
+[L.2] Kyle Marshall missed the lab session and started the lab later that day with Nick.
+
+[L.3] 3+ hours outside of class were required.
+
+[L.4] It was challenging, 4/10. We falsely believed the auto-encoder part was working at one point when it was not, and now we don't have enough time to fix the error.
+
+------ ANSWERS ------
+
+[1]
+
+0.07680 0.07520 0.07660 0.07520 0.07580
+0.02320 0.02320 0.02380 0.02080 0.02380
+0.01980 0.02020 0.02060 0.01840 0.01980
+0.01860 0.01920 0.01840 0.01880 0.01980
+0.02460 0.02480 0.02360 0.02200 0.02120 
+0.31000 0.29380 0.27120 0.51280 0.31160
+
+[2]
+
+0.07680 0.07500 0.07340 0.07600 0.07340
+0.02620 0.02560 0.02440 0.02520 0.02520 
+0.02580 0.02800 0.02600 0.02160 0.02540
+0.02720 0.02700 0.02700 0.02660 0.02820
+0.88780 0.88780 0.88780 0.88900 0.88780
+0.88780 0.88780 0.88900 0.88780 0.88780
+
+[3] This part is not working, we have a dimension mismatch causing an error when the gradients are being calculated. We think we are incorrectly defining the objective function for mean squared error so that it 

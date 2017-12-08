@@ -1,0 +1,269 @@
+#! /usr/bin/env python
+
+"""
+@authors: Brian Hutchinson (Brian.Hutchinson@wwu.edu)
+
+This script trains and evaluates a multinomial logistic regression model.
+
+For usage, run with the -h flag.
+
+Example command:
+
+python lab2_demo.py data/train.csv.gz data/dev.csv.gz
+
+"""
+
+import tensorflow as tf
+import argparse
+import sys
+import numpy as np
+import math
+args = None
+#seed=497
+#f1 = "tanh"
+#mb = 32
+#L = 50
+#epochs = 200
+#patience = 10
+#model = "/tmp/model.ckpt"
+
+def build_graph(lr,D,C):
+    global args
+    if args == None:
+        print("we need arguments.")
+        return
+    
+    """
+    Constructs the multinomial logistic regression graph.
+
+    :param lr: (float) the learning rate
+    :param D: (integer) the input feature dimension
+    :param C: (integer) the number of classes
+    """
+    # set seed
+    #tf.set_random_seed(args.seed)
+    #np.random.seed(args.seed)
+
+    # parse hidden dimension string as list of ints
+    
+    
+    
+    dims = []
+    if args.hidden_dims != "":
+        raw_dims = args.hidden_dims.split(",")
+        dims = list(map(int, raw_dims))
+    
+    # placeholders
+    # note: None leaves the dimension unspecified, allowing us to
+    #       feed in either minibatches (during training) or the dev set
+    x1      = tf.placeholder(dtype=tf.float32,shape=(None,D),name="x1")
+    y_true = tf.placeholder(dtype=tf.int64,shape=(None),name="y_true")
+    
+    # variables
+    hidden_layer_count = len(dims)
+    
+    # weight matrices and bias vectors
+    W = []
+    B = []
+    from_dim = D
+    for i in range(hidden_layer_count):
+        hidden_dim = dims[i]
+        # matrix transforms from from_dims to hidden_dim
+        temp_w = tf.get_variable(name="w%d"%i, shape = (from_dim, hidden_dim), dtype = tf.float32,
+                                     initializer=tf.glorot_uniform_initializer())
+        b = None
+        if args.f == 'relu':
+            b = tf.get_variable(name="b%i"%i, dtype = tf.float32,
+                            initializer=tf.constant([0.1]*hidden_dim))
+        else:
+            b = tf.get_variable(name="b%i"%i, shape = (hidden_dim), dtype = tf.float32,
+                                initializer=tf.zeros_initializer())
+        B.append(b)
+        W.append(temp_w)
+        from_dim = hidden_dim
+        
+    # add final matrix from last hidden layer to output
+    W.append(tf.get_variable(name="wf", shape=(from_dim, C), dtype = tf.float32,
+                             initializer=tf.glorot_uniform_initializer()))
+    # and the final bias vector
+    B.append(tf.get_variable(name="bf", shape=(C), dtype = tf.float32,
+                             initializer=tf.zeros_initializer()))
+
+
+    
+    # f will be used as the activation for all hidden layers
+    f = None
+    if args.f == 'tanh':
+        f = tf.tanh
+    elif args.f == 'sigmoid':
+        f = tf.sigmoid
+    elif args.f == 'relu':
+        f = tf.nn.relu
+    else:
+        print("bad activation function")
+        return
+
+
+    # forward propogation through all hidden layers
+    in_layer = x1
+    for i in range(hidden_layer_count):
+        mat = W[i]
+        b = B[i]
+        z = tf.matmul(in_layer, mat) + b
+        a = f(z)
+        in_layer = a
+
+    # for the output, do not use f as activation
+    mat = W[hidden_layer_count]
+    z = tf.matmul(in_layer, mat) + B[hidden_layer_count]
+    # producing logits
+    
+    # TODO use identity as activation for output if autoencoding
+    obj = None
+    if args.autoencode:
+        # need to map mean_sq_err
+        #print(y_true.shape, z.shape)
+        mean_sq_err = tf.losses.mean_squared_error(
+            labels = y_true,
+            predictions = z,
+            reduction = "NONE",
+        )
+        #print("MSQERR:"+str(mean_sq_err))
+        #obj = tf.reduce_mean(tf.square(z - tf.cast(y_true,tf.float32)))
+        obj = mean_sq_err
+        #obj = tf.reduce_mean(mean_sq_err, name="obj")
+    else:
+        # loss (performs softmax implicitly for us - supports minibatches)
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=z,\
+                                                                   labels=y_true)
+        obj = tf.reduce_mean(cross_entropy,name="obj")
+
+    # additional metrics (accuracy)
+    # note: the mean is required because it produces N binary values
+    #       one per datapoint fed into the graph
+    acc = tf.reduce_mean(tf.cast(tf.equal(y_true,tf.argmax(z,axis=1)),tf.float32),name="acc")
+    err = tf.subtract(1.0, acc, name = "err")
+    
+    
+    # side effect operations
+    train_step = tf.train.GradientDescentOptimizer(lr).minimize(obj,name="train_step")
+
+    init = tf.global_variables_initializer()
+    return init
+
+def main():
+    """
+    Parses args, loads and normalizes data, builds graph, trains and evaluates.
+
+    """
+    
+    # parse arguments
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("train",help="The training set file (a csv)")
+    parser.add_argument("dev",help="The development set file (a csv)")
+    #parser.add_argument("-h", help="show this help message and exit")
+    parser.add_argument("-f", type = str, help="Hidden activation (in the set {sigmoid, tanh, relu}) [default: \"tanh\"]", default="relu")
+    parser.add_argument("-lr",type=float,\
+            help="The learning rate (a float)",default=0.1)
+    parser.add_argument("-mb",type=int,\
+            help="The minibatch size (an int)",default=32)
+
+    parser.add_argument("-epochs",type=int,\
+            help="The number of epochs to train for",default=200)
+    parser.add_argument("-patience", type=int,
+                        help = "How many epochs to continue training without improving\
+                        dev accuracy (int) [default: 10]", default=10)
+    parser.add_argument("-seed", type=int, help = "random seed (int) [default: 497]",
+                        default = 497)
+    parser.add_argument("-model", type = str, help = "Save the best model with this prefix\
+                        (string) [default:\"/tmp/model.ckpt\"]", default = "/tmp/model.ckpt")
+
+    # new args for lab3
+    parser.add_argument("--classify", action='store_const', default = False, const = True,
+                        help = "Predict digit label from image (supervised)")
+    parser.add_argument("--autoencode", action='store_const', default = False, const = True,
+                        help = "Reconstruct image as output (unsupervised)")
+    parser.add_argument("-hidden-dims", type= str,\
+               help = "A string with the dimension of each hidden layer, comma -delimited (string) [default: \"50,50\"]",\
+               default = "50,50")
+    
+
+    
+    global args
+    args = parser.parse_args()
+
+    if args.f not in ['relu', 'sigmoid', 'tanh']:
+        print("Error: invalid activation function")
+        return
+
+    # load and normalize data
+    train = np.genfromtxt(args.train,delimiter=",")
+    train_x = train[:,1:]
+    train_y = train[:,0]
+    train_x /= 255.0 # map from [0,255] to [0,1]
+
+    dev   = np.genfromtxt(args.dev,delimiter=",")
+    dev_x = dev[:,1:]
+    dev_y = dev[:,0]
+    dev_x /= 255.0 # map from [0,255] to [0,1]
+    
+    # compute relevant dimensions
+    C = np.max(train_y)+1 # warning: would fail if highest class number
+                          #          didn't appear in train
+    N,D = train_x.shape
+
+    # for early stopping
+    low_dev_err = 1.0
+    
+    # epochs without better accuracy
+    badcount = 0
+
+    # build graph
+    init = build_graph(args.lr,D,C)
+
+    # allow best model to be saved
+    saver = tf.train.Saver()
+    ckpt_fn = args.model
+    
+    # converged = false
+    # run graph
+    with tf.Session() as sess:
+        sess.run(init) # note: can specify fetches by tensor/op name
+
+        for epoch in range(args.epochs):
+            # shuffle data once per epoch
+            idx = np.random.permutation(N)
+            train_x = train_x[idx,:]
+            train_y = train_y[idx]
+
+            # train on each minibatch
+            for update in range(int(np.floor(N/args.mb))):
+                mb_x = train_x[(update*args.mb):((update+1)*args.mb),:]
+                mb_y = train_y[(update*args.mb):((update+1)*args.mb)]
+                # note: you can use tensor names in feed_dict
+                _,my_acc = sess.run(fetches=["train_step","acc:0"],\
+                        feed_dict={"x1:0":mb_x,"y_true:0":mb_y}) 
+
+            # evaluate once per epoch on dev set
+            [my_dev_err] = sess.run(fetches=["err:0"],\
+                    feed_dict={"x1:0":dev_x,"y_true:0":dev_y})
+            if my_dev_err < low_dev_err:
+                low_dev_err = my_dev_err
+                badcount = 0
+                # save best model
+                saver.save(sess, ckpt_fn)
+            else:
+                badcount += 1
+
+            print ("Epoch %d: dev=%.5f badcount=%d" % (epoch,my_dev_err,badcount))
+
+            # early stopping
+            if badcount == args.patience:
+                print("Converged due to early stopping...")
+                break
+        print("Best dev=%.5f"%low_dev_err)
+            
+
+if __name__ == "__main__":
+    main()
